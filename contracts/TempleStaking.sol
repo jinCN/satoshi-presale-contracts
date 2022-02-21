@@ -20,6 +20,7 @@ contract TempleStaking is Ownable {
   TempleERC20Token public immutable TEMPLE; // The token being staked, for which TEMPLE rewards are generated
   OGTemple public immutable OG_TEMPLE; // Token used to redeem staked TEMPLE
   ExitQueue public EXIT_QUEUE; // unstake exit queue
+  IERC20 public SATO;
 
   // epoch percentage yield, as an ABDKMath64x64
   int128 public epy;
@@ -37,15 +38,21 @@ contract TempleStaking is Ownable {
   // the epoch up to which we have calculated accumulationFactor.
   uint256 public lastUpdatedEpoch;
 
-  event StakeCompleted(address _staker, uint256 _amount, uint256 _lockedUntil);
+  uint256 public lockUntil;
+
+  // OGTemple for each user
+  mapping(address => uint256) public stakes;
+
+  event StakeCompleted(address _staker, uint256 _amount, uint256 _amountOG);
   event AccumulationFactorUpdated(uint256 _epochsProcessed, uint256 _currentEpoch, uint256 _accumulationFactor);
-  event UnstakeCompleted(address _staker, uint256 _amount);
+  event UnstakeCompleted(address _staker, uint256 _amount, uint256 _amountSATO);
 
   constructor(
     TempleERC20Token _TEMPLE,
     ExitQueue _EXIT_QUEUE,
     uint256 _epochSizeSeconds,
-    uint256 _startTimestamp
+    uint256 _startTimestamp,
+    uint256 _lockUntil
   ) {
     require(_startTimestamp < block.timestamp, "Start timestamp must be in the past");
     require(
@@ -63,11 +70,16 @@ contract TempleStaking is Ownable {
     startTimestamp = _startTimestamp;
     epy = ABDKMath64x64.fromUInt(1);
     accumulationFactor = ABDKMath64x64.fromUInt(1);
+    lockUntil = _lockUntil;
   }
 
   /** Sets epoch percentage yield */
   function setExitQueue(ExitQueue _EXIT_QUEUE) external onlyOwner {
     EXIT_QUEUE = _EXIT_QUEUE;
+  }
+
+  function setLockUntil(uint256 _lockUntil) external onlyOwner {
+    lockUntil = _lockUntil;
   }
 
   /** Sets epoch percentage yield */
@@ -81,8 +93,17 @@ contract TempleStaking is Ownable {
     return epy.sub(ABDKMath64x64.fromUInt(1)).mul(ABDKMath64x64.fromUInt(_scale)).toUInt();
   }
 
+  function getAddressOG(address _addr, uint256 _scale) external view returns (uint256) {
+    return ABDKMath64x64.fromUInt(stakes[_addr]).mul(ABDKMath64x64.fromUInt(_scale)).toUInt();
+  }
+
+  function getAddressSATO(address _addr,uint256 _scale) external view returns (uint256) {
+    return ABDKMath64x64.fromUInt(stakes[_addr]).mul(_accumulationFactorAt(currentEpoch())).mul(ABDKMath64x64.fromUInt(_scale)).toUInt();
+  }
+
   function currentEpoch() public view returns (uint256) {
-    return (block.timestamp - startTimestamp) / epochSizeSeconds;
+    uint256 time = block.timestamp <= lockUntil ? block.timestamp : lockUntil;
+    return (time - startTimestamp) / epochSizeSeconds;
   }
 
   /** Return current accumulation factor, scaled up to account for fractional component */
@@ -130,7 +151,9 @@ contract TempleStaking is Ownable {
 
     SafeERC20.safeTransferFrom(TEMPLE, msg.sender, address(this), _amountTemple);
     OG_TEMPLE.mint(_staker, amountOgTemple);
-    emit StakeCompleted(_staker, _amountTemple, 0);
+    stakes[_staker] += amountOgTemple;
+
+  emit StakeCompleted(_staker, _amountTemple, amountOgTemple);
 
     return amountOgTemple;
   }
@@ -141,28 +164,57 @@ contract TempleStaking is Ownable {
   }
 
   /** Unstake temple */
-  function unstake(uint256 _amountOgTemple) external {
+  function unstakeAll() external {
+
+    uint256 _amountOgTemple = stakes[msg.sender];
     require(
-      OG_TEMPLE.allowance(msg.sender, address(this)) >= _amountOgTemple,
-      "Insufficient OGTemple allowance. Cannot unstake"
+      _amountOgTemple >= 0,
+      "Staking value is 0. Cannot unstake."
     );
-
+    stakes[msg.sender] = 0;
     _updateAccumulationFactor();
-    uint256 unstakeBalanceTemple = balance(_amountOgTemple);
+    uint256 unstakeBalanceSato = balance(_amountOgTemple);
 
-    OG_TEMPLE.burnFrom(msg.sender, _amountOgTemple);
-    SafeERC20.safeIncreaseAllowance(TEMPLE, address(EXIT_QUEUE), unstakeBalanceTemple);
-    EXIT_QUEUE.join(msg.sender, unstakeBalanceTemple);
+    OG_TEMPLE.burn(_amountOgTemple);
 
-    emit UnstakeCompleted(msg.sender, _amountOgTemple);
+    SafeERC20.safeTransferFrom(SATO, address(this), msg.sender, unstakeBalanceSato);
+
+    emit UnstakeCompleted(msg.sender, _amountOgTemple, unstakeBalanceSato);
+  }
+
+  function unstakeAllAndStakeTo() external {
+
+    uint256 _amountOgTemple = stakes[msg.sender];
+    require(
+      _amountOgTemple >= 0,
+      "Staking value is 0. Cannot unstake."
+    );
+    stakes[msg.sender] = 0;
+    _updateAccumulationFactor();
+    uint256 unstakeBalanceSato = balance(_amountOgTemple);
+
+    OG_TEMPLE.burn(_amountOgTemple);
+
+    SafeERC20.safeTransferFrom(SATO, address(this), msg.sender, unstakeBalanceSato);
+
+    emit UnstakeCompleted(msg.sender, _amountOgTemple, unstakeBalanceSato);
+  }
+
+  function inputSATO(IERC20 _SATO, uint256 amountSATO) external onlyOwner {
+    SATO = _SATO;
+    SafeERC20.safeTransferFrom(SATO, msg.sender, address(this), amountSATO);
+  }
+
+  function withdrawSATO(IERC20 _SATO, uint256 amountSATO) external onlyOwner {
+    SafeERC20.safeTransfer(_SATO, msg.sender, amountSATO);
   }
 
   function _overflowSafeMul1e18(int128 amountFixedPoint) internal pure returns (uint256) {
     uint256 integralDigits = amountFixedPoint.toUInt();
     uint256 fractionalDigits = amountFixedPoint
-      .sub(ABDKMath64x64.fromUInt(integralDigits))
-      .mul(ABDKMath64x64.fromUInt(1e18))
-      .toUInt();
+    .sub(ABDKMath64x64.fromUInt(integralDigits))
+    .mul(ABDKMath64x64.fromUInt(1e18))
+    .toUInt();
     return (integralDigits * 1e18) + fractionalDigits;
   }
 }

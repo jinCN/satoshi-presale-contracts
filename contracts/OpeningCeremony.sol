@@ -19,7 +19,7 @@ import "./LockedOGTemple.sol";
  */
 contract OpeningCeremony is Ownable, Pausable, AccessControl {
   bytes32 public constant CAN_ADD_VERIFIED_USER = keccak256("CAN_ADD_VERIFIED_USER");
-  uint256 constant SECONDS_IN_DAY = 24 * 60 * 60;
+  uint256 public SECONDS_IN_DAY = 24 * 60 * 60;
 
   IERC20 public stablecToken; // contract address for stable coin used in treasury
   TempleERC20Token public templeToken; // temple ERC20 contract
@@ -28,17 +28,18 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
   TempleStaking public staking; // Staking contract
   LockedOGTemple public lockedOGTemple; // contract where OG Temple is locked
 
-  uint256 public unlockDelaySeconds = SECONDS_IN_DAY * 7 * 6; // How long after after buying can templars unlock
+  uint256 public unlockDelayDays = 7 * 6; // How long after after buying can templars unlock
+  uint256 public lockUntil;
   uint256 public mintMultiple = 6; // presale mint multiple
   uint256 public harvestThresholdStablec; // At what mint level do stakers trigger a harvest
   uint256 public inviteThresholdStablec; // How much does a verified user have to spend before they can invite others
   uint256 public maxInvitesPerVerifiedUser; // How many guests can each verified user invite
-
+  uint256 public doublingDays = 7;
   // how much to multiple a verified users day 1 mint limit to work out
   // their total at a given point in time. So for a user who quests
   // on day 1 => 3 day limit will be DAY_ONE_LIMIT * 4 / 1
   // on day 2 => 3 day limit will be DAY_ONE_LIMIT * 4 / 2
-  uint256 public globalDoublingIndex = 1;
+  uint256 public globalDoublingIndex = 0;
   uint256 public lastUpdatedTimestamp; // when was the limitFactor last updated
 
   struct Limit {
@@ -48,9 +49,9 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
   }
 
   Limit public limitStablec =
-    Limit({ guestMax: 10000 * 1e18, verifiedMax: 480000 * 1e18, verifiedDayOne: 30000 * 1e18 });
+  Limit({guestMax : 1e7, verifiedMax : 8 * 1e7, verifiedDayOne : 1e7});
   Limit public limitTemple =
-    Limit({ guestMax: 10000 * 1e18, verifiedMax: 480000 * 1e18, verifiedDayOne: 30000 * 1e18 });
+  Limit({guestMax : 1e7, verifiedMax : 8 * 1e7, verifiedDayOne : 1e7});
 
   struct Factor {
     uint256 numerator;
@@ -90,6 +91,7 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
     uint256 _harvestThresholdStablec,
     uint256 _inviteThresholdStablec,
     uint256 _maxInvitesPerVerifiedUser,
+    uint256 _lockUntil,
     Factor memory _verifiedBonusFactor,
     Factor memory _guestBonusFactor
   ) {
@@ -103,6 +105,8 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
     harvestThresholdStablec = _harvestThresholdStablec;
     inviteThresholdStablec = _inviteThresholdStablec;
     maxInvitesPerVerifiedUser = _maxInvitesPerVerifiedUser;
+    lockUntil = _lockUntil;
+
     verifiedBonusFactor = _verifiedBonusFactor;
     guestBonusFactor = _guestBonusFactor;
 
@@ -111,8 +115,16 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
     _setupRole(DEFAULT_ADMIN_ROLE, owner());
   }
 
-  function setUnlockDelay(uint256 _unlockDelaySeconds) external onlyOwner {
-    unlockDelaySeconds = _unlockDelaySeconds;
+  function setSECONDS_IN_DAY(uint256 _SECONDS_IN_DAY) external onlyOwner {
+    SECONDS_IN_DAY = _SECONDS_IN_DAY;
+  }
+
+  function setDoublingDays(uint256 _doublingDays) external onlyOwner {
+    doublingDays = _doublingDays;
+  }
+
+  function setLockUntil(uint256 _lockUntil) external onlyOwner {
+    lockUntil = _lockUntil;
   }
 
   function setMintMultiple(uint256 _mintMultiple) external onlyOwner {
@@ -168,6 +180,13 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
   function addVerifiedUser(address userAddress) external {
     require(hasRole(CAN_ADD_VERIFIED_USER, msg.sender), "Caller cannot add verified user");
     require(!users[userAddress].isVerified, "Address already verified");
+
+    if ((block.timestamp - lastUpdatedTimestamp) > SECONDS_IN_DAY) {
+      uint256 step = (block.timestamp - lastUpdatedTimestamp) / SECONDS_IN_DAY;
+      globalDoublingIndex += step;
+      lastUpdatedTimestamp += step * SECONDS_IN_DAY;
+    }
+
     users[userAddress].isVerified = true;
     users[userAddress].doublingIndexAtVerification = globalDoublingIndex;
 
@@ -193,8 +212,9 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
     // update max limit. This happens before checks, to ensure maxSacrificable
     // is correctly calculated.
     if ((block.timestamp - lastUpdatedTimestamp) > SECONDS_IN_DAY) {
-      globalDoublingIndex *= 2;
-      lastUpdatedTimestamp += SECONDS_IN_DAY;
+      uint256 step = (block.timestamp - lastUpdatedTimestamp) / SECONDS_IN_DAY;
+      globalDoublingIndex += step;
+      lastUpdatedTimestamp += step * SECONDS_IN_DAY;
     }
 
     Factor storage bonusFactor;
@@ -229,9 +249,9 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
 
     // Stake both minted and bonus temple. Locking up any OGTemple
     SafeERC20.safeIncreaseAllowance(templeToken, address(staking), _totalTemple);
-    uint256 _amountOgTemple = staking.stake(_totalTemple);
-    SafeERC20.safeIncreaseAllowance(staking.OG_TEMPLE(), address(lockedOGTemple), _amountOgTemple);
-    lockedOGTemple.lockFor(_staker, _amountOgTemple, block.timestamp + unlockDelaySeconds);
+    uint256 _amountOgTemple = staking.stakeFor(_staker, _totalTemple);
+    //    SafeERC20.safeIncreaseAllowance(staking.OG_TEMPLE(), address(lockedOGTemple), _amountOgTemple);
+    //    lockedOGTemple.lockFor(_staker, _amountOgTemple, lockUntil);
 
     // Finally, run harvest if amount sacrificed is 10k or greater
     if (_amountPaidStablec >= harvestThresholdStablec) {
@@ -277,7 +297,7 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
     SafeERC20.safeIncreaseAllowance(templeToken, address(staking), _totalTemple);
     uint256 _amountOgTemple = staking.stake(_totalTemple);
     SafeERC20.safeIncreaseAllowance(staking.OG_TEMPLE(), address(lockedOGTemple), _amountOgTemple);
-    lockedOGTemple.lockFor(_staker, _amountOgTemple, block.timestamp + unlockDelaySeconds);
+    lockedOGTemple.lockFor(_staker, _amountOgTemple, lockUntil);
 
     emit StakeComplete(_staker, _amountTemple, _bonusTemple, _amountOgTemple);
   }
@@ -302,7 +322,8 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
   }
 
   function maxSacrificableStablec(uint256 doublingIndexAtVerification) public view returns (uint256 maxLimit) {
-    maxLimit = (limitStablec.verifiedDayOne * globalDoublingIndex) / doublingIndexAtVerification;
+    uint256 doubling = (globalDoublingIndex - doublingIndexAtVerification) / doublingDays;
+    maxLimit = limitStablec.verifiedDayOne * 2 ** (doubling > 20 ? 20 : doubling);
     if (maxLimit > limitStablec.verifiedMax) {
       maxLimit = limitStablec.verifiedMax;
     }

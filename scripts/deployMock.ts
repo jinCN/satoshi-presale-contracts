@@ -300,6 +300,8 @@ async function main() {
   console.log(`await openingCeremony.SECONDS_IN_DAY():`, await openingCeremony.SECONDS_IN_DAY());
   console.log(`await openingCeremony.doublingDays():`, await openingCeremony.doublingDays());
   while (p.t !== p.p) p.r = await (p.t = p.p).catch(e => e);
+  
+  while (p.t !== p.p) p.r = await (p.t = p.p).catch(e => e);
 }
 
 // We recommend this pattern to be able to use async/await everywhere

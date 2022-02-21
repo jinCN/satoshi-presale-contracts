@@ -14,6 +14,7 @@ async function main() {
   if(chainId!==4){
     throw new Error(`chainId is wrong`)
   }
+  console.log(`OK`);
 }
 
 // We recommend this pattern to be able to use async/await everywhere

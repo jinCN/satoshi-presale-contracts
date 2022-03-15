@@ -90,8 +90,9 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
     TreasuryManagementProxy _treasuryManagement,
     uint256 _harvestThresholdStablec,
     uint256 _inviteThresholdStablec,
-    uint256 _maxInvitesPerVerifiedUser,
+
     uint256 _lockUntil,
+    uint256 _lastUpdatedTimestamp,
     Factor memory _verifiedBonusFactor,
     Factor memory _guestBonusFactor
   ) {
@@ -104,13 +105,13 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
 
     harvestThresholdStablec = _harvestThresholdStablec;
     inviteThresholdStablec = _inviteThresholdStablec;
-    maxInvitesPerVerifiedUser = _maxInvitesPerVerifiedUser;
+    maxInvitesPerVerifiedUser = 0;
     lockUntil = _lockUntil;
+    lastUpdatedTimestamp = _lastUpdatedTimestamp;
 
-    verifiedBonusFactor = _verifiedBonusFactor;
+  verifiedBonusFactor = _verifiedBonusFactor;
     guestBonusFactor = _guestBonusFactor;
 
-    lastUpdatedTimestamp = block.timestamp;
 
     _setupRole(DEFAULT_ADMIN_ROLE, owner());
   }
@@ -193,17 +194,17 @@ contract OpeningCeremony is Ownable, Pausable, AccessControl {
     emit VerifiedUserAdded(userAddress);
   }
 
-  function addGuestUser(address userAddress) external {
-    require(users[msg.sender].isVerified, "only verified users can invite guests");
-    require(
-      users[msg.sender].totalSacrificedStablec >= inviteThresholdStablec,
-      "Need to sacrifice more frax before you can invite others"
-    );
-    require(users[msg.sender].numInvited < maxInvitesPerVerifiedUser, "Exceed maximum number of invites");
-
-    users[userAddress].isGuest = true;
-    users[msg.sender].numInvited += 1;
-  }
+//  function addGuestUser(address userAddress) external {
+//    require(users[msg.sender].isVerified, "only verified users can invite guests");
+//    require(
+//      users[msg.sender].totalSacrificedStablec >= inviteThresholdStablec,
+//      "Need to sacrifice more frax before you can invite others"
+//    );
+//    require(users[msg.sender].numInvited < maxInvitesPerVerifiedUser, "Exceed maximum number of invites");
+//
+//    users[userAddress].isGuest = true;
+//    users[msg.sender].numInvited += 1;
+//  }
 
   /** mint temple and immediately stake, on behalf of a staker, with a bonus + lockin period */
   function mintAndStakeFor(address _staker, uint256 _amountPaidStablec) public whenNotPaused {

@@ -1,7 +1,3 @@
-process.env.HARDHAT_NETWORK ||= 'rinkeby';
-process.env.HARDHAT_SHOW_STACK_TRACES ||= 'true';
-process.env.HARDHAT_VERBOSE ||= 'true';
-
 /* eslint-disable camelcase */
 /* eslint-disable node/no-missing-import */
 import {BigNumber, constants, Contract} from 'ethers';
@@ -31,22 +27,26 @@ import {
 
 const config = {
   wbtc: '0x5180E4D72A3BB3d2b60c77Ac6fdc0bFfEffCb5CC', // WBTC here
-  sato: '0x9942E04E033bD59A70D4Be61D7Fcb9C5527DAFC8', // SATO
-  satoTreasury: '0x300C42F5297A769E0802c14395b45423169546d7',
-  staking: '0xA897d8f365FECd0Ab687d3e230751aE88c62f83D',
-  treasuryManagement: '0x9f0fD06d4faF5291197F9c6d6BB17610c3c36FBD',
+  sato: '0xF12fe93A7295df963142e43e84C2A680895DCB2f', // SATO
+  satoTreasury: '0xD6C838F6A6Ea4f67f11A198615175c3DC4CE88b0',
+  stakingHelper: '0x2eAe64fD1Aa1894d6432e5ca2DB18724257f5dA6',
+  staking: '0x6D559c1FD6791db23eb824Ee22cb694B2e0C584A',
+  treasuryManagement: '0x8d12de5C3d7913E2073c0A12B6ade2CE6EAA01ea',
+  treasury: '0x1Acf78806554eAb9dc5dc1CEd4Aee7267e40E519',
 };
 
 // use 0 for not defined
-let wbtcBalance = ethers.utils.parseUnits('0', 8);
+let wbtcBalance = ethers.utils.parseUnits('0', 0);
 // use 0 for not defined
-let satoBalance = ethers.utils.parseUnits('0', 8);
+let satoBalance = ethers.utils.parseUnits('0', 18);
 
 let actions = {
   _01withdrawWBTC: true,
-  _02inputWBTCToTreasury: false,
-  _03inputSATOToStaking: false
+  _02inputWBTCToTreasury: true,
+  _03inputSATOToStaking: true
 };
+
+const sleep = (ms: number | undefined) => new Promise((resolve, reject) => setTimeout(resolve, ms));
 
 let _r: any = undefined;
 let p = {p: Promise.resolve(), t: Promise.resolve(), r: _r};
@@ -59,6 +59,8 @@ async function main() {
   console.log(`deployer info:`, deployer.address, await deployer.getBalance());
   const treasuryManagement = TreasuryManagementProxy__factory.connect(config.treasuryManagement, deployer);
   console.log('Found TreasuryManagementProxy at:', treasuryManagement.address);
+  const treasury = TempleTreasury__factory.connect(config.treasury, deployer);
+  console.log('Found TempleTreasury at:', treasury.address);
   const staking = TempleStaking__factory.connect(config.staking, deployer);
   console.log('Found TempleStaking at:', staking.address);
   
@@ -66,7 +68,8 @@ async function main() {
   const sato = TempleERC20Token__factory.connect(config.sato, deployer);
   
   if (actions._01withdrawWBTC) {
-    let balance = await wbtc.balanceOf(treasuryManagement.address);
+    console.log('01withdrawWBTC');
+    let balance = await wbtc.balanceOf(treasury.address);
     if (wbtcBalance.eq(0)) {
       wbtcBalance = balance;
     } else if (!balance.eq(wbtcBalance)) {
@@ -77,10 +80,12 @@ async function main() {
     
     let tx = await treasuryManagement.allocateTreasuryStablec(deployer.address, wbtcBalance);
     await tx.wait();
-    
+
     while (p.t !== p.p) p.r = await (p.t = p.p).catch(e => e);
   }
   if (actions._02inputWBTCToTreasury) {
+    console.log('02inputWBTCToTreasury');
+  
     if (wbtcBalance.eq(0)) {
       throw new Error('wbtcBalance not defined or feteched');
     }
@@ -88,21 +93,29 @@ async function main() {
     let tx = await wbtc.approve(satoTreasury.address, wbtcBalance);
     await tx.wait();
     tx = await satoTreasury.deposit(wbtcBalance, wbtc.address, 0);
-    await tx.wait();
-    
+    let result = await tx.wait();
+    console.log(`result:`, result);
     while (p.t !== p.p) p.r = await (p.t = p.p).catch(e => e);
   }
   if (actions._03inputSATOToStaking) {
-    if(satoBalance.eq(0)){
-      satoBalance = await sato.balanceOf(deployer.address);
-    }
-    
-    let tx = await sato.approve(staking.address, constants.MaxUint256);
-    await tx.wait();
-    tx = await staking.inputSATO(sato.address, satoBalance);
-    await tx.wait();
-  }
+    console.log('03inputSATOToStaking');
   
+    if (satoBalance.eq(0)) {
+      if (wbtcBalance.eq(0)) {
+        satoBalance = await sato.balanceOf(deployer.address);
+      } else {
+        satoBalance = wbtcBalance.mul(1e14);
+      }
+    }
+  
+    let tx = await sato.approve(staking.address, satoBalance);
+    await tx.wait();
+    tx = await staking.inputSATO(sato.address, config.stakingHelper,satoBalance);
+    await tx.wait();
+  
+    while (p.t !== p.p) p.r = await (p.t = p.p).catch(e => e);
+  }
+  console.log('OK');
   while (p.t !== p.p) p.r = await (p.t = p.p).catch(e => e);
 }
 

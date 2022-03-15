@@ -14,7 +14,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
  * It mints and burns OGTemple as users stake/unstake
  */
 contract OGTemple is ERC20, ERC20Burnable, Ownable {
-  constructor() ERC20("OGTemple", "OG_TEMPLE") {}
+  constructor() ERC20("OGSato", "OG_SATO") {}
 
   function mint(address to, uint256 amount) external onlyOwner {
     _mint(to, amount);

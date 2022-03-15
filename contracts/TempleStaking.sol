@@ -8,7 +8,7 @@ import "./ABDKMath64x64.sol";
 import "./TempleERC20Token.sol";
 import "./OGTemple.sol";
 import "./ExitQueue.sol";
-
+import "./IStakingHelper.sol";
 // import "hardhat/console.sol";
 
 /**
@@ -21,6 +21,7 @@ contract TempleStaking is Ownable {
   OGTemple public immutable OG_TEMPLE; // Token used to redeem staked TEMPLE
   ExitQueue public EXIT_QUEUE; // unstake exit queue
   IERC20 public SATO;
+  IStakingHelper public StakingHelper;
 
   // epoch percentage yield, as an ABDKMath64x64
   int128 public epy;
@@ -144,16 +145,18 @@ contract TempleStaking is Ownable {
   function stakeFor(address _staker, uint256 _amountTemple) public returns (uint256 amountOgTemple) {
     require(_amountTemple > 0, "Cannot stake 0 tokens");
 
+    require(address(SATO) == address(0), "Presale is over");
+
     _updateAccumulationFactor();
 
     // net past value/genesis value/OG Value for the temple you are putting in.
     amountOgTemple = _overflowSafeMul1e18(ABDKMath64x64.divu(_amountTemple, 1e18).div(accumulationFactor));
 
     SafeERC20.safeTransferFrom(TEMPLE, msg.sender, address(this), _amountTemple);
-    OG_TEMPLE.mint(_staker, amountOgTemple);
+    OG_TEMPLE.mint(address(this), amountOgTemple);
     stakes[_staker] += amountOgTemple;
 
-  emit StakeCompleted(_staker, _amountTemple, amountOgTemple);
+    emit StakeCompleted(_staker, _amountTemple, amountOgTemple);
 
     return amountOgTemple;
   }
@@ -177,12 +180,12 @@ contract TempleStaking is Ownable {
 
     OG_TEMPLE.burn(_amountOgTemple);
 
-    SafeERC20.safeTransferFrom(SATO, address(this), msg.sender, unstakeBalanceSato);
+    SafeERC20.safeTransfer(SATO, msg.sender, unstakeBalanceSato);
 
     emit UnstakeCompleted(msg.sender, _amountOgTemple, unstakeBalanceSato);
   }
 
-  function unstakeAllAndStakeTo() external {
+  function unstakeAllAndStake() external {
 
     uint256 _amountOgTemple = stakes[msg.sender];
     require(
@@ -195,18 +198,21 @@ contract TempleStaking is Ownable {
 
     OG_TEMPLE.burn(_amountOgTemple);
 
-    SafeERC20.safeTransferFrom(SATO, address(this), msg.sender, unstakeBalanceSato);
+    SafeERC20.safeIncreaseAllowance(SATO, address(StakingHelper), unstakeBalanceSato);
+
+    StakingHelper.stake(unstakeBalanceSato, msg.sender);
 
     emit UnstakeCompleted(msg.sender, _amountOgTemple, unstakeBalanceSato);
   }
 
-  function inputSATO(IERC20 _SATO, uint256 amountSATO) external onlyOwner {
+  function inputSATO(IERC20 _SATO, IStakingHelper _StakingHelper, uint256 amountSATO) external onlyOwner {
     SATO = _SATO;
+    StakingHelper = _StakingHelper;
     SafeERC20.safeTransferFrom(SATO, msg.sender, address(this), amountSATO);
   }
 
-  function withdrawSATO(IERC20 _SATO, uint256 amountSATO) external onlyOwner {
-    SafeERC20.safeTransfer(_SATO, msg.sender, amountSATO);
+  function withdrawSATO(uint256 amountSATO) external onlyOwner {
+    SafeERC20.safeTransfer(SATO, msg.sender, amountSATO);
   }
 
   function _overflowSafeMul1e18(int128 amountFixedPoint) internal pure returns (uint256) {

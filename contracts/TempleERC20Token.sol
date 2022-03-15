@@ -11,7 +11,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 contract TempleERC20Token is ERC20, ERC20Burnable, Ownable, AccessControl {
   bytes32 public constant CAN_MINT = keccak256("CAN_MINT");
 
-  constructor() ERC20("Temple", "TEMPLE") {
+  constructor() ERC20("Sato", "SATO") {
     _setupRole(DEFAULT_ADMIN_ROLE, owner());
   }
 

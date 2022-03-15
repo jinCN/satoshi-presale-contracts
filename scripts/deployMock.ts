@@ -54,9 +54,9 @@ const epy = {
 const maxPerEpoch = '1000000000000000000000';
 const maxPerAddress = '1000000000000000000000';
 const epochSize = '10';
-const SECONDS_IN_DAY = 30 * 60;
-const NOW = (new Date().getTime() - 60 * 1000) / 1000 >> 0;
-const lockUntil = NOW + 6 * 7 * SECONDS_IN_DAY;
+const SECONDS_IN_DAY = 10 * 60;// 间隔时间
+const NOW = (new Date('2022-2-24 11:00:00').getTime()) / 1000 >> 0;// 起始时间
+const lockUntil = NOW + 6 * SECONDS_IN_DAY;// 解锁时间
 
 const config: {
   dai: string;
@@ -70,29 +70,29 @@ const config: {
   openingCeremonyQuest?: string;
   verifyQuest?: string;
 } = {
-  dai: '0x5180E4D72A3BB3d2b60c77Ac6fdc0bFfEffCb5CC', // WBTC here
-  temple: '0x797D7550d58aCdC373d2120DB3e1467F5fa2915e',
-  exitQueue: '0x3635112557e7070D984baD75EA72a53bd6d15F99',
-  staking: '0x64211518A983639fece8F853e51544FD7c324a6c',
-  lockedOGTemple: '0xEc96D5969802e3d249c2fCc5BE5d6142A92d3D09',
-  treasury: '0xD2C3183800FF74D69c6D21d46347CFA403eD6Ebd',
-  treasuryManagement: '0xBF6329574406d820EB662Cee91198774E5cd23Cb',
-  openingCeremony: '0x6C7a2282B68f68654992FA494b6fF05CAC807BD2',
-  openingCeremonyQuest: '0xB1900E99C07A4C10CfC8B9731356c14529376219',
-  verifyQuest: '0x8FC41912bA86d97e7FD98bb7051F9b2c7B3E457C',
-};
+  dai: '0x5180E4D72A3BB3d2b60c77Ac6fdc0bFfEffCb5CC',
+  temple: '0x0Dcd87C1F82fB46280DBe176B47E4e8b44bEE5b4',
+  exitQueue: '0x544ACFC1830e4a4e4226679F5526AD1E1E96A584',
+  staking: '0x6D559c1FD6791db23eb824Ee22cb694B2e0C584A',
+  lockedOGTemple: '0xb7634cE5977B15993202BE4A9152839b8aE8D817',
+  treasury: '0x1Acf78806554eAb9dc5dc1CEd4Aee7267e40E519',
+  treasuryManagement: '0x8d12de5C3d7913E2073c0A12B6ade2CE6EAA01ea',
+  openingCeremony: '0x06EDEe880B3c15970e9BAcCBA90F9722cC7951fA',
+  openingCeremonyQuest: '0x80F93292812731d68BACD436E4fC47534c558b21',
+  verifyQuest: '0xd4BE7947a7a265eBdc80e560F971F1190d723801'
+}
 //   {
-//   dai: '0x5180E4D72A3BB3d2b60c77Ac6fdc0bFfEffCb5CC', // WBTC here
-//   temple: '0xF9088230d393D3bEe9d9Be0c6D3B9Aa919222aEd',
-//   exitQueue: '0xF4c935001BB28B90224Ba8f267Efc214E4b19Fd9',
-//   staking: '0x04206e245698d4143Bb8DC90e0fe1a75d077eA7F',
-//   lockedOGTemple: '0x51A177C0491398EC9518C50053C62d79bA7e7A9B',
-//   treasury: '0x7439dCB9b96f0D7128cEb770a3Fa274Aeb2228bE',
-//   treasuryManagement: '0xc31cc64f7829715Ac217AF241F040767b682c04a',
-//   openingCeremony: '0xB1151d9036C5de230b65b3e8c08538Af42B38a64',
-//   openingCeremonyQuest: '0x7AaAca6D830BE4Ed7554F1201f8a69909C6674Ce',
-//   verifyQuest: '0x87e253b26B407cC8395C6e0e0892Bc4348324D3F',
-// };
+//     dai: '0x5180E4D72A3BB3d2b60c77Ac6fdc0bFfEffCb5CC', // WBTC here
+//     temple: undefined,
+//     exitQueue: undefined,
+//     staking: undefined,
+//     lockedOGTemple: undefined,
+//     treasury: undefined,
+//     treasuryManagement: undefined,
+//     openingCeremony: undefined,
+//     openingCeremonyQuest: undefined,
+//     verifyQuest: undefined,
+//   };
 
 let temple: TempleERC20Token;
 let ogTemple: OGTemple;
@@ -154,11 +154,6 @@ async function main() {
   } else {
     staking = TempleStaking__factory.connect(config.staking, deployer);
     console.log('Found TempleStaking at:', staking.address);
-  }
-  
-  {
-    // const tx = await staking.setEpy(epy.numerator, epy.denominator);
-    // await tx.wait();
   }
   
   while (p.t !== p.p) p.r = await (p.t = p.p);
@@ -238,8 +233,9 @@ async function main() {
       treasuryManagement.address,
       harvestThresholdStablec,
       inviteThresholdStablec,
-      maxInvitesPerVerifiedUser,
+  
       lockUntil + '',
+      NOW + '',
       verifiedBonusFactor,
       guestBonusFactor
     );
